@@ -10,8 +10,8 @@ Single-GPU Cost Modeling
   
   * Idea: :math:`\max(\text{compute time}, \text{memory access time})`
   * Use linear regression model for NVIDIA GPUs
-  * Compute time model (:math:`\text{latency} + \text{bandwidth} \times \text{\#flops}`)
-  * Memory access model (:math:`\text{latency} + \text{bandwidth} \times \text{\#bytes}`)
+  * Compute time model (:math:`\text{latency} + \text{bandwidth} \times \text{#flops}`)
+  * Memory access model (:math:`\text{latency} + \text{bandwidth} \times \text{#bytes}`)
 
 .. image:: img/linear_regression_for_runtime_cost_estimation.png
   :alt: Linear Regression for Runtime Cost Estimation
@@ -23,12 +23,6 @@ Single-GPU Cost Modeling
 **Memory Cost Estimation**
 
 * Memory cost estimation for each operator
-  
-  * Memory cost = peak memory usage + memory liveness analysis
-  * Peak memory usage = :math:`\sum_{i=1}^{n} \text{max}(\text{input}_i, \text{output}_i)`
-  
-    * :math:`\text{input}_i` and :math:`\text{output}_i` are the input and output tensors of the operator
-    * :math:`n` is the number of inputs/outputs
 
   * FX graph enables precise peak memory analysis
   * Memory liveness analysis
@@ -64,7 +58,7 @@ Device Mesh Abstraction
   * Current Approach: Predefined device mesh shape
   
     * Profile all-reduce among the devices in the same mesh dim
-    * Linear regression along each mesh dim :math:`i` (:math:`\text{time}_i = \text{latency}_i + \text{bandwidth}_i \times \text{\#bytes}`)
+    * Linear regression along each mesh dim :math:`i` (:math:`\text{time}_i = \text{latency}_i + \text{bandwidth}_i \times \text{#bytes}`)
   
   * In-Progress: Auto Mesh Discovery
     
@@ -75,6 +69,6 @@ Device Mesh Abstraction
     
     * Profile the communication latency between each mesh dimension
     * Search the mesh shape where the communication time along the same dim with max similarity
-    * Linear regression along each mesh dim :math:`i` (:math:`\text{time}_i = \text{latency}_i + \text{bandwidth}_i \times \text{\#bytes}`)
+    * Linear regression along each mesh dim :math:`i` (:math:`\text{time}_i = \text{latency}_i + \text{bandwidth}_i \times \text{#bytes}`)
 
 

@@ -6,7 +6,8 @@
 TorchCAP documentation
 ======================
 
-**Can we know if a 1000X hardware proposal is feasible?**
+Can we know if a 1000X hardware proposal is feasible?
+-----------------------------------------------------
 
 * Given target models (e.g., Llama), scenarios (e.g., training and inference) and hardware proposal (e.g., device FLOPS / Mem. bandwidth and interconnect)
 * Predict performance and runtime analysis for operators (e.g., compute and communication)
@@ -17,8 +18,21 @@ TorchCAP documentation
   :width: 100%
 
 
+Overview of TorchCAP
+--------------------
+**Main Components**
+
+* System Cost Estimator
+  * Predict the runtime and memory consumption of a model program
+* Execution Plan Optimizer
+  * Transform the model execution plan based on the cost estimation
+
+
+
+
+
 Applications in AI Infrastructure
---------------
+----------------------------------
 
 * automatic parallelism
 * resource scheduling 
