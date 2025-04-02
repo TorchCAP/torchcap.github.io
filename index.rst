@@ -27,7 +27,10 @@ Overview of TorchCAP
 * Execution Plan Optimizer
   * Transform the model execution plan based on the cost estimation
 
-
+.. image:: img/torchCAP_overview.png
+  :alt: TorchCAP Overview
+  :align: center
+  :width: 100%
 
 
 
