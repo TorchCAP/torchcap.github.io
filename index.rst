@@ -23,8 +23,11 @@ Overview of TorchCAP
 **Main Components**
 
 * System Cost Estimator
+  
   * Predict the runtime and memory consumption of a model program
+
 * Execution Plan Optimizer
+  
   * Transform the model execution plan based on the cost estimation
 
 .. image:: img/torchCAP_overview.png
