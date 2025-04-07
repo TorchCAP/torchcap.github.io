@@ -44,7 +44,7 @@ Challenge
 * Communication cost varies for multi-level hierarchical communication
 * Congestion may occur in certain scenarios
   
-Device Mesh Abstraction
+**Device Mesh Abstraction**
 
 .. image:: img/device_mesh_abstraction.png
   :alt: Device Mesh Abstraction
