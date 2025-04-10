@@ -41,7 +41,7 @@ Let :math:`u_0,u_1,\cdots,u_{n-1}` be the set of operators in the graph represen
 
   m_t = \sum_{i} s_i \cdot \text{output_size}(u_t)[i]
 
-where :math:`\text{output\_size}(u_t)[i]` is the output tensor size of operator :math:`u_i` with the k-th strategy.
+where :math:`\text{output_size}(u_t)[i]` is the output tensor size of operator :math:`u_i` with the k-th strategy.
 
 By analyzing the graph, we can extract the live range of each output tensor, represented by :math:`[start_k, end_k]`. Let :math:`delta[t]` denotes the memory change during the execution of operator :math:`t`.
 
