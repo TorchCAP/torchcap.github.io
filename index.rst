@@ -6,20 +6,24 @@
 TorchCAP documentation
 ======================
 
-Can we know if a 1000X hardware proposal is feasible?
------------------------------------------------------
-
-* Given target models (e.g., Llama), scenarios (e.g., training and inference) and hardware proposal (e.g., device FLOPS / Mem. bandwidth and interconnect)
-* Predict performance and runtime analysis for operators (e.g., compute and communication)
-
-.. image:: img/scaling.png
-  :alt: Scaling Analysis
-  :align: center
-  :width: 100%
++---------------+---+
+| Checklist     |   |
++===============+===+
+| Code          | ✅ |
++---------------+---+
+| Quick Start   | ✅ |
++---------------+---+
+| Cost Model    | ✅ |
++---------------+---+
+| Auto-Sharding | ✅ |
++---------------+---+
+| Benchmark     | ✅ |
++---------------+---+
 
 
 Overview of TorchCAP
---------------------
+^^^^^^^^^^^^^^^^^^^^
+
 **Main Components**
 
 * System Cost Estimator
@@ -38,7 +42,7 @@ Overview of TorchCAP
 
 
 Applications in AI Infrastructure
-----------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 * automatic parallelism
 * resource scheduling 
@@ -48,7 +52,6 @@ Applications in AI Infrastructure
   :alt: Refine Hardware with TorchCAP
   :align: center
   :width: 100%
-
 
 
 .. Add your content using ``reStructuredText`` syntax. See the
