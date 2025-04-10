@@ -29,7 +29,7 @@ The objective of the formulation is
 
 .. math::
 
-  \sum_(u,v) \in E s_u R_{uv}[i][j] s_v
+  \sum_{(u,v) \in E} s_u R_{uv}[i][j] s_v
 
 This formulation is similar to the one proposed in Alpa but without communication cost as it is already been included in the resharding cost.
 
