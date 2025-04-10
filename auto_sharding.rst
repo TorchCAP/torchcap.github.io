@@ -39,7 +39,7 @@ Let :math:`u_0,u_1,\cdots,u_{n-1}` be the set of operators in the graph represen
 
 .. math::
 
-  m_t = \sum{i} \s_i \cdot \text{output\_size}(u_t)[i]
+  m_t = \sum{i} s_i \cdot \text{output_size}(u_t)[i]
 
 where :math:`\text{output\_size}(u_t)[i]` is the output tensor size of operator :math:`u_i` with the k-th strategy.
 
@@ -63,7 +63,7 @@ And the memory constraint can be formulated as
 
 .. math::
 
-  \max{t} m_t \leq \text{max\_memory}
+  \max_{t} M_t \leq \text{max_memory}
 
 
 Sharding Transformation
