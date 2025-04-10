@@ -1,29 +1,42 @@
 Auto Sharding
 =============
 
-This document aims to describe the automatic sharding of TorchCAP. It provides the implementation details of automatic sharding, including an overview of the automatic sharding optimizer, the optimization formulation of finding an optimal sharding plan and the sharding transformation of the model graph and.
+This document describes the automatic sharding mechanism in TorchCAP, detailing the implementation of the auto-sharding pipeline. It covers the architecture of the sharding optimizer, the formulation used to determine an optimal sharding plan, and the transformation process applied to the model graph.
 
 Automatic Sharding Overview
 ^^^^^^^^^^^^^^^^^^^^^^
 
-The high-level API of automatic sharding is ``torchcap.optimize`` (`link <https://github.com/TorchCAP/TorchCAP/blob/6abd50d1a31b0bdf4762c914cf5e583d3810117d/torchcap/api.py>`_), which performs the following steps:
+The high-level API for automatic sharding is available via ``torchcap.optimize`` (`api.py <https://github.com/TorchCAP/TorchCAP/blob/6abd50d1a31b0bdf4762c914cf5e583d3810117d/torchcap/api.py>`_). The optimizer performs the following steps:
 
-1. Convert an input model to an FX graph via ``torch.export``
-2. Estimate the runtime and memory consumption of each operator in the graph
-3. Find the optimal sharding strategy for the graph
-4. Transform the graph into a distributed graph using the sharding strategy
+1. Converts the input model into an FX graph using torch.export
+
+2. Estimates the runtime and memory consumption of each operator in the graph
+
+3. Determines the optimal sharding strategy for the graph
+
+4. Transforms the model into a distributed version using the selected strategy
+
+Users may also provide custom sharding strategies for specific operations. The optimizer will compute the optimal strategy for the remaining parts of the graph accordingly.
+
 
 Automatic Sharding Solver
 ^^^^^^^^^^^^^^^^^^^^^^
 
-The formulation used in the solver is based on the integer linear programming (ILP) formulation proposed in `Alpa <https://arxiv.org/abs/2201.12023>`_, with modifications for Pytorch DTensor support. The implementation can be found in `parallel_solver.py <https://github.com/TorchCAP/TorchCAP/blob/6abd50d1a31b0bdf4762c914cf5e583d3810117d/torchcap/solver/parallel_solver.py>`_.
+The solver formulation is based on the integer linear programming (ILP) approach proposed in `Alpa <https://arxiv.org/abs/2201.12023>`_, with modifications to support PyTorch DTensor. The implementation is available in `parallel_solver.py <https://github.com/TorchCAP/TorchCAP/blob/6abd50d1a31b0bdf4762c914cf5e583d3810117d/torchcap/solver/parallel_solver.py>`_.
 
-Pytorch DTensor supports three types of ``sharding`` (also refer as ``placement`` in Pytorch official documentation): ``Shard(dim)`` (``R``) means the sharding of tensor dimension ``dim`` over the mesh dimension; ``Replicate()`` (``R``) means the tensor is replicated over the mesh dimension; ``Partial`` (``P``) indicates the tensor is pending reduction on the devices of the. For a N-dimensional mesh, a N-dimensional vector is used to represent the sharding over each mesh dimension. For example, `S(0)R` indicates the dimension 0 is sharded over the mesh dimension 0 and is replicated over the mesh dimension 1. More details can be found in `Pytorch official documentation <https://pytorch.org/docs/stable/distributed.tensor.html>`_.
+PyTorch DTensor supports three types of ``sharding`` (also referred to as ``placement`` in the PyTorch documentation):
 
-For each operator in the graph, the solver enumerates all possible sharding strategies based on the operator sharding rules defined in `Pytorch <https://github.com/pytorch/pytorch/tree/4273e5d15cfcb282b2795684874ea439d8620999/torch/distributed/tensor/_ops>`_ and `sharding_strategy.py <https://github.com/TorchCAP/TorchCAP/blob/6abd50d1a31b0bdf4762c914cf5e583d3810117d/torchcap/solver/sharding_strategy.py>`_. For example, a sharding strategy of a linear operator ``R, S(0), S(0) -> S(1)``, representing that first argument is replicated, the second and third arguments are sharded over the tensor dimension 0 and the output is sharded over the tensor dimension 1. For an operator ``u``, a one-hot vector ``s_u`` is used to represent the strategy it uses, where ``s_u[i] = 1`` means the i-th strategy of operator ``u`` is selected.
+- ``Shard(dim)`` (``S(dim)``): Shards the specified tensor dimension over the mesh dimension.
+- ``Replicate`` (``R``): Replicates the tensor across the mesh dimension.
+- ``Partial`` (``P``): Indicates the tensor is pending reduction across devices.
 
-When two operators require different shardings for the same tensor, additional communication may be necessary for resharding. For example, the output of the linear operator is ``S(1)`` but the operator used this output requires it to be ``R``, then a all-gather communication is needed to reshard the tensor, which is the cause of communication overheads in sharding. For the resharding cost between operator ``u`` and operator ``v``, the solver constructs a resharding cost
-matrix :math:`R_{uv}`, where :math:`R_{uv}[i][j]` is the resharding cost from the output of i-th strategy of node u to the input of j-th strategy of node v.
+For an N-dimensional mesh, a vector of length N represents the sharding strategy across each dimension. For example, ``S(0)R`` indicates dimension 0 is sharded over mesh dimension 0 and replicated over mesh dimension 1. See the `PyTorch DTensor documentation <https://pytorch.org/docs/stable/distributed.tensor.html>`_ for further details.
+
+For each operator in the graph, the solver enumerates all possible sharding strategies based on the operator sharding rules defined in both `Pytorch <https://github.com/pytorch/pytorch/tree/4273e5d15cfcb282b2795684874ea439d8620999/torch/distributed/tensor/_ops>`_ and `sharding_strategy.py <https://github.com/TorchCAP/TorchCAP/blob/6abd50d1a31b0bdf4762c914cf5e583d3810117d/torchcap/solver/sharding_strategy.py>`_. For example, a sharding strategy of a linear operator ``R, S(0), S(0) -> S(1)``, representing that first argument is replicated, the second and third arguments are sharded over the tensor dimension 0 and the output is sharded over the tensor dimension 1. 
+
+Each operator ``u`` is assigned a one-hot vector :math:`s_u`, where :math:`s_u[i] = 1` denotes that the i-th strategy has been selected for operator ``u``.
+
+When two operators require incompatible sharding for a shared tensor, communication is needed for resharding. For instance, if the output of a linear operator is ``S(1)``, but the consumer operator expects it as ``R``, an all-gather operation is required—introducing communication overhead. For the resharding cost between operator ``u`` and operator ``v``, the solver constructs a resharding cost matrix :math:`R_{uv}`, where :math:`R_{uv}[i][j]` is the cost of resharding the output of strategy i for operator ``u`` into the input of strategy j for operator ``v``.
 
 The objective of the formulation is 
 
@@ -31,19 +44,20 @@ The objective of the formulation is
 
   \sum_{(u,v) \in E} s_u R_{uv}[i][j] s_v
 
-This formulation is similar to the one proposed in Alpa but without communication cost as it is already been included in the resharding cost.
+This formulation captures both the choice of strategy and the communication cost, similar to Alpa’s formulation but with communication overheads folded into the resharding costs.
 
-Additionally, the formulation has a memory constraint to limit the memory usage of each device, which is defined as the maximum memory consumption of each GPU.
+Memory Constraint
++++++++++++++
 
-Let :math:`u_0,u_1,\cdots,u_{n-1}` be the set of operators in the graph represented in topological order, and :math:`m_t` be the memory consumption of output tensor of operator :math:`u_t`. Then :math:`m_t` can be computed by
+To bound memory usage per device, a memory constraint is added to the formulation. Let :math:`u_0, u_1, \ldots, u_{n-1}` be the operators in topological order. Let :math:`m_t` be the memory consumed by the output tensor of operator :math:`u_t`. It is calculated as:
 
 .. math::
 
   m_t = \sum_{i} s_i \cdot \text{output_size}(u_t)[i]
 
-where :math:`\text{output_size}(u_t)[i]` is the output tensor size of operator :math:`u_i` with the k-th strategy.
+Here, :math:`\text{output\_size}(u_t)[i]` is the output size of operator :math:`u_t` under strategy i.
 
-By analyzing the graph, we can extract the live range of each output tensor, represented by :math:`[start_k, end_k]`. Let :math:`delta[t]` denotes the memory change during the execution of operator :math:`t`.
+Using liveness analysis, we extract the live range of each output tensor as :math:`[start_k, end_k]`. Define :math:`\delta[t]` as the net memory change at step :math:`t`:
 
 .. math::
 
@@ -51,15 +65,14 @@ By analyzing the graph, we can extract the live range of each output tensor, rep
 
 where the first term is the memory allocation of the output tensor of operator :math:`t` and the second term is the memory deallocation of the output tensor last used by operator :math:`t`.
 
-
-Then the accumulated memory consumption :math:`M_t` during each operator :math:`t` can be computed by
+The cumulative memory consumption at step :math:`t`, denoted as :math:`M_t`, is then:
 
 .. math::
 
   M_t = M_{t-1} + delta[t]
 
 
-And the memory constraint can be formulated as
+Therefore, the memory constraint can be represented as
 
 .. math::
 
@@ -69,3 +82,11 @@ And the memory constraint can be formulated as
 Sharding Transformation
 ^^^^^^^^^^^^^^^^^^^^^^
 
+The sharding transformation pass is implemented in `tensor_parallel.py <https://github.com/TorchCAP/TorchCAP/blob/6abd50d1a31b0bdf4762c914cf5e583d3810117d/torchcap/transform/tensor_parallel.py>`_.
+
+The pass performs the following steps:
+
+1. Annotate the sharding strategy for each operator and derive the sharding strategy (``_mark_tensor_parallel_shardings``)
+2. Partition the single device graph to distributed graph (``_partitioner``)
+  1. Insert the resharding communication operations if there is a misaligned sharding (``_insert_reshard_gm``)
+3. Partition the parameters based on the sharding strategy  (``_shard_state_dict``)
