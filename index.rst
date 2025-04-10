@@ -6,7 +6,6 @@
 TorchCAP documentation
 ======================
 
-
 Overview of TorchCAP
 ^^^^^^^^^^^^^^^^^^^^
 
@@ -38,6 +37,18 @@ Applications in AI Infrastructure
   :alt: Refine Hardware with TorchCAP
   :align: center
   :width: 100%
+
+Checklist
+=========
+
+- Code ✅
+- Documentation
+   - Installation ✅
+   - Quick Start ✅
+   - Cost Model ✅
+   - Auto-Sharding ✅
+- Benchmark ✅
+
 
 
 .. Add your content using ``reStructuredText`` syntax. See the
