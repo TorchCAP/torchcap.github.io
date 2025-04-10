@@ -72,5 +72,8 @@ Applications in AI Infrastructure
   cost_model.rst
   auto_sharding.rst
 
+.. toctree::
+  :maxdepth: 1
+  :caption: Benchmark
 
-
+  benchmark.rst
