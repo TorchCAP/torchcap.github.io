@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Auto Sharding &#8212; TorchCAP  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Benchmark" href="benchmark.html" />
+    <link rel="prev" title="Cost Model" href="cost_model.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="auto-sharding">
+<h1>Auto Sharding<a class="headerlink" href="#auto-sharding" title="Link to this heading">¶</a></h1>
+<p>This document describes the automatic sharding mechanism in TorchCAP, detailing the implementation of the auto-sharding pipeline. It covers the architecture of the sharding optimizer, the formulation used to determine an optimal sharding plan, and the transformation process applied to the model graph.</p>
+<section id="automatic-sharding-overview">
+<h2>Automatic Sharding Overview<a class="headerlink" href="#automatic-sharding-overview" title="Link to this heading">¶</a></h2>
+<p>The high-level API for automatic sharding is available via <code class="docutils literal notranslate"><span class="pre">torchcap.optimize</span></code> (<a class="reference external" href="https://github.com/TorchCAP/TorchCAP/blob/6abd50d1a31b0bdf4762c914cf5e583d3810117d/torchcap/api.py">api.py</a>). The optimizer performs the following steps:</p>
+<ol class="arabic simple">
+<li><p>Converts the input model into an FX graph using torch.export</p></li>
+<li><p>Estimates the runtime and memory consumption of each operator in the graph</p></li>
+<li><p>Determines the optimal sharding strategy for the graph</p></li>
+<li><p>Transforms the model into a distributed version using the selected strategy</p></li>
+</ol>
+<p>Users may also provide custom sharding strategies for specific operations. The optimizer will compute the optimal strategy for the remaining parts of the graph accordingly.</p>
+</section>
+<section id="automatic-sharding-solver">
+<h2>Automatic Sharding Solver<a class="headerlink" href="#automatic-sharding-solver" title="Link to this heading">¶</a></h2>
+<p>The solver formulation is based on the integer linear programming (ILP) approach proposed in <a class="reference external" href="https://arxiv.org/abs/2201.12023">Alpa</a>, with modifications to support PyTorch DTensor. The implementation is available in <a class="reference external" href="https://github.com/TorchCAP/TorchCAP/blob/6abd50d1a31b0bdf4762c914cf5e583d3810117d/torchcap/solver/parallel_solver.py">parallel_solver.py</a>.</p>
+<p>PyTorch DTensor supports three types of <code class="docutils literal notranslate"><span class="pre">sharding</span></code> (also referred to as <code class="docutils literal notranslate"><span class="pre">placement</span></code> in the PyTorch documentation):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">Shard(dim)</span></code> (<code class="docutils literal notranslate"><span class="pre">S(dim)</span></code>): Shards the specified tensor dimension over the mesh dimension.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Replicate</span></code> (<code class="docutils literal notranslate"><span class="pre">R</span></code>): Replicates the tensor across the mesh dimension.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Partial</span></code> (<code class="docutils literal notranslate"><span class="pre">P</span></code>): Indicates the tensor is pending reduction across devices.</p></li>
+</ul>
+<p>For an N-dimensional mesh, a vector of length N represents the sharding strategy across each dimension. For example, <code class="docutils literal notranslate"><span class="pre">S(0)R</span></code> indicates dimension 0 is sharded over mesh dimension 0 and replicated over mesh dimension 1. See the <a class="reference external" href="https://pytorch.org/docs/stable/distributed.tensor.html">PyTorch DTensor documentation</a> for further details.</p>
+<p>For each operator in the graph, the solver enumerates all possible sharding strategies based on the operator sharding rules defined in both <a class="reference external" href="https://github.com/pytorch/pytorch/tree/4273e5d15cfcb282b2795684874ea439d8620999/torch/distributed/tensor/_ops">Pytorch</a> and <a class="reference external" href="https://github.com/TorchCAP/TorchCAP/blob/6abd50d1a31b0bdf4762c914cf5e583d3810117d/torchcap/solver/sharding_strategy.py">sharding_strategy.py</a>. For example, a sharding strategy of a linear operator <code class="docutils literal notranslate"><span class="pre">R,</span> <span class="pre">S(0),</span> <span class="pre">S(0)</span> <span class="pre">-&gt;</span> <span class="pre">S(1)</span></code>, representing that first argument is replicated, the second and third arguments are sharded over the tensor dimension 0 and the output is sharded over the tensor dimension 1.</p>
+<p>Each operator <code class="docutils literal notranslate"><span class="pre">u</span></code> is assigned a one-hot vector <span class="math notranslate nohighlight">\(s_u\)</span>, where <span class="math notranslate nohighlight">\(s_u[i] = 1\)</span> denotes that the i-th strategy has been selected for operator <code class="docutils literal notranslate"><span class="pre">u</span></code>.</p>
+<p>When two operators require incompatible sharding for a shared tensor, communication is needed for resharding. For instance, if the output of a linear operator is <code class="docutils literal notranslate"><span class="pre">S(1)</span></code>, but the consumer operator expects it as <code class="docutils literal notranslate"><span class="pre">R</span></code>, an all-gather operation is required—introducing communication overhead. For the resharding cost between operator <code class="docutils literal notranslate"><span class="pre">u</span></code> and operator <code class="docutils literal notranslate"><span class="pre">v</span></code>, the solver constructs a resharding cost matrix <span class="math notranslate nohighlight">\(R_{uv}\)</span>, where <span class="math notranslate nohighlight">\(R_{uv}[i][j]\)</span> is the cost of resharding the output of strategy i for operator <code class="docutils literal notranslate"><span class="pre">u</span></code> into the input of strategy j for operator <code class="docutils literal notranslate"><span class="pre">v</span></code>.</p>
+<p>The objective of the formulation is</p>
+<div class="math notranslate nohighlight">
+\[\sum_{(u,v) \in E} s_u R_{uv}[i][j] s_v\]</div>
+<p>This formulation captures both the choice of strategy and the communication cost, similar to Alpa’s formulation but with communication overheads folded into the resharding costs.</p>
+<section id="memory-constraint">
+<h3>Memory Constraint<a class="headerlink" href="#memory-constraint" title="Link to this heading">¶</a></h3>
+<p>To bound memory usage per device, a memory constraint is added to the formulation. Let <span class="math notranslate nohighlight">\(u_0, u_1, \ldots, u_{n-1}\)</span> be the operators in topological order. Let <span class="math notranslate nohighlight">\(m_t\)</span> be the memory consumed by the output tensor of operator <span class="math notranslate nohighlight">\(u_t\)</span>. It is calculated as:</p>
+<div class="math notranslate nohighlight">
+\[m_t = \sum_{i} s_i \cdot \text{output_size}(u_t)[i]\]</div>
+<p>Here, <span class="math notranslate nohighlight">\(\text{output\_size}(u_t)[i]\)</span> is the output size of operator <span class="math notranslate nohighlight">\(u_t\)</span> under strategy i.</p>
+<p>Using liveness analysis, we extract the live range of each output tensor as <span class="math notranslate nohighlight">\([start_k, end_k]\)</span>. Define <span class="math notranslate nohighlight">\(\delta[t]\)</span> as the net memory change at step <span class="math notranslate nohighlight">\(t\)</span>:</p>
+<div class="math notranslate nohighlight">
+\[delta[t] = m_t - \sum_{\forall k, t = end_k} m_i\]</div>
+<p>where the first term is the memory allocation of the output tensor of operator <span class="math notranslate nohighlight">\(t\)</span> and the second term is the memory deallocation of the output tensor last used by operator <span class="math notranslate nohighlight">\(t\)</span>.</p>
+<p>The cumulative memory consumption at step <span class="math notranslate nohighlight">\(t\)</span>, denoted as <span class="math notranslate nohighlight">\(M_t\)</span>, is then:</p>
+<div class="math notranslate nohighlight">
+\[M_t = M_{t-1} + delta[t]\]</div>
+<p>Therefore, the memory constraint can be represented as</p>
+<div class="math notranslate nohighlight">
+\[\max_{t} M_t \leq \text{max_memory}\]</div>
+</section>
+</section>
+<section id="sharding-transformation">
+<h2>Sharding Transformation<a class="headerlink" href="#sharding-transformation" title="Link to this heading">¶</a></h2>
+<p>The sharding transformation pass is implemented in <a class="reference external" href="https://github.com/TorchCAP/TorchCAP/blob/6abd50d1a31b0bdf4762c914cf5e583d3810117d/torchcap/transform/tensor_parallel.py">tensor_parallel.py</a>.</p>
+<p>The pass performs the following steps:</p>
+<ol class="arabic simple">
+<li><p>Annotate the sharding strategy for each operator and derive the sharding strategy (<code class="docutils literal notranslate"><span class="pre">_mark_tensor_parallel_shardings</span></code>)</p></li>
+<li><p>Partition the single device graph to distributed graph (<code class="docutils literal notranslate"><span class="pre">_partitioner</span></code>)</p></li>
+</ol>
+<blockquote>
+<div><ol class="arabic simple">
+<li><p>Insert the resharding communication operations if there is a misaligned sharding (<code class="docutils literal notranslate"><span class="pre">_insert_reshard_gm</span></code>)</p></li>
+</ol>
+</div></blockquote>
+<ol class="arabic simple" start="3">
+<li><p>Partition the parameters based on the sharding strategy  (<code class="docutils literal notranslate"><span class="pre">_shard_state_dict</span></code>)</p></li>
+</ol>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">TorchCAP</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Install TorchCAP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">TorchCAP Quickstart</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Deep Dive</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="cost_model.html">Cost Model</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Auto Sharding</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Benchmark</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="benchmark.html">Benchmark</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="cost_model.html" title="previous chapter">Cost Model</a></li>
+      <li>Next: <a href="benchmark.html" title="next chapter">Benchmark</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, mksit.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/auto_sharding.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
