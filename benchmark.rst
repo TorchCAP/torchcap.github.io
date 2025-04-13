@@ -1,6 +1,7 @@
 Benchmark
 =========
 
+Input Sequence Size = :math:`16 \times 1024`
 
 Single GPU
 ----------------
